@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package com.example.android.sunshine.wear;
+package com.example.android.sunshine.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.AssetManager;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -31,9 +33,22 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.text.TextUtils;
+import android.text.format.DateUtils;
 import android.text.format.Time;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.MessageApi;
+import com.google.android.gms.wearable.Wearable;
 
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
@@ -65,6 +80,10 @@ public class RoundWatchFace extends CanvasWatchFaceService {
     private static final int MSG_UPDATE_TIME = 0;
     private boolean shouldShowSeconds = false;
 
+    public RoundWatchFace() {
+
+    }
+
     @Override
     public Engine onCreateEngine() {
         return new Engine();
@@ -90,7 +109,11 @@ public class RoundWatchFace extends CanvasWatchFaceService {
         }
     }
 
-    private class Engine extends CanvasWatchFaceService.Engine {
+    private class Engine extends CanvasWatchFaceService.Engine  implements
+            GoogleApiClient.ConnectionCallbacks,
+            GoogleApiClient.OnConnectionFailedListener,
+            DataApi.DataListener{
+
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
@@ -100,6 +123,23 @@ public class RoundWatchFace extends CanvasWatchFaceService {
         Paint mIconPaint;
         Paint mHighTempPaint;
         Paint mLowTempPaint;
+
+        protected Resources mResources;
+        protected AssetManager mAssets;
+
+        protected int mTheme = 3;
+        protected String mWeatherCondition;
+        protected String mWeatherConditionResourceName;
+      //  protected int mTimeUnit = ConverterUtil.TIME_UNIT_12;
+
+        protected int mRequireInterval;
+        protected int mTemperature = Integer.MAX_VALUE;
+        protected int mTemperatureScale;
+        protected long mWeatherInfoReceivedTime;
+        protected long mWeatherInfoRequiredTime;
+
+        protected Bitmap mWeatherConditionDrawable;
+        protected GoogleApiClient mGoogleApiClient;
 
         boolean mAmbient;
         Time mTime;
@@ -114,12 +154,24 @@ public class RoundWatchFace extends CanvasWatchFaceService {
 
         float mXOffset;
         float mYOffset;
+        String mName;
+
 
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
          * disable anti-aliasing in ambient mode.
          */
         boolean mLowBitAmbient;
+
+
+        public Engine() {
+            mName = "roundwatch";
+            mGoogleApiClient = new GoogleApiClient.Builder(RoundWatchFace.this)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .addApi(Wearable.API)
+                    .build();
+        }
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -155,6 +207,11 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             mLowTempPaint = new Paint();
 
             mTime = new Time();
+            mResources = RoundWatchFace.this.getResources();
+            mAssets = RoundWatchFace.this.getAssets();
+            mRequireInterval = mResources.getInteger(R.integer.weather_default_require_interval);
+            mWeatherInfoRequiredTime = System.currentTimeMillis() - (DateUtils.SECOND_IN_MILLIS * 58);
+            mGoogleApiClient.connect();
         }
 
         @Override
@@ -369,6 +426,130 @@ public class RoundWatchFace extends CanvasWatchFaceService {
                         - (timeMs % INTERACTIVE_UPDATE_RATE_MS);
                 mUpdateTimeHandler.sendEmptyMessageDelayed(MSG_UPDATE_TIME, delayMs);
             }
+        }
+
+        protected void log(String message) {
+            Log.d(RoundWatchFace.this.getClass().getSimpleName(), message);
+        }
+
+        protected void fetchConfig(DataMap config) {
+            if (config.containsKey(Consts.KEY_WEATHER_UPDATE_TIME)) {
+                mWeatherInfoReceivedTime = config.getLong(Consts.KEY_WEATHER_UPDATE_TIME);
+            }
+
+            if (config.containsKey(Consts.KEY_WEATHER_CONDITION)) {
+                String cond = config.getString(Consts.KEY_WEATHER_CONDITION);
+                if (TextUtils.isEmpty(cond)) {
+                    mWeatherCondition = null;
+                } else {
+                    mWeatherCondition = cond;
+                }
+            }
+            log(mWeatherCondition);
+//
+//            if (config.containsKey(Consts.KEY_WEATHER_TEMPERATURE)) {
+//                mTemperature = config.getInt(Consts.KEY_WEATHER_TEMPERATURE);
+//                if (mTemperatureScale != ConverterUtil.FAHRENHEIT) {
+//                    mTemperature = ConverterUtil.convertFahrenheitToCelsius(mTemperature);
+//                }
+//            }
+//
+//            if (config.containsKey(Consts.KEY_WEATHER_SUNRISE)) {
+//                mSunriseTime.set(config.getLong(Consts.KEY_WEATHER_SUNRISE) * 1000);
+//                log("SunriseTime: " + mSunriseTime);
+//            }
+//
+//            if (config.containsKey(Consts.KEY_WEATHER_SUNSET)) {
+//                mSunsetTime.set(config.getLong(Consts.KEY_WEATHER_SUNSET) * 1000);
+//                log("SunsetTime: " + mSunsetTime);
+//            }
+//
+//            if (config.containsKey(Consts.KEY_CONFIG_TEMPERATURE_SCALE)) {
+//                int scale = config.getInt(Consts.KEY_CONFIG_TEMPERATURE_SCALE);
+//
+//                if (scale != mTemperatureScale) {
+//                    if (scale == ConverterUtil.FAHRENHEIT) {
+//                        mTemperature = ConverterUtil.convertCelsiusToFahrenheit(mTemperature);
+//                    } else {
+//                        mTemperature = ConverterUtil.convertFahrenheitToCelsius(mTemperature);
+//                    }
+//                }
+//
+//                mTemperatureScale = scale;
+//            }
+
+            if (config.containsKey(Consts.KEY_CONFIG_THEME)) {
+                mTheme = config.getInt(Consts.KEY_CONFIG_THEME);
+            }
+
+//            if (config.containsKey(Consts.KEY_CONFIG_TIME_UNIT)) {
+//                mTimeUnit = config.getInt(Consts.KEY_CONFIG_TIME_UNIT);
+//            }
+
+            if (config.containsKey(Consts.KEY_CONFIG_REQUIRE_INTERVAL)) {
+                mRequireInterval = config.getInt(Consts.KEY_CONFIG_REQUIRE_INTERVAL);
+            }
+
+            invalidate();
+        }
+
+
+
+
+        protected void requireWeatherInfo() {
+            if (!mGoogleApiClient.isConnected())
+                return;
+
+            log("I am connected");
+
+            long timeMs = System.currentTimeMillis();
+
+            // The weather info is still up to date.
+            if ((timeMs - mWeatherInfoReceivedTime) <= mRequireInterval)
+                return;
+
+            // Try once in a min.
+            //TODO: hide it
+//            if ((timeMs - mWeatherInfoRequiredTime) <= DateUtils.MINUTE_IN_MILLIS)
+//                return;
+
+            log("and it is ready to send a message to parent App");
+            mWeatherInfoRequiredTime = timeMs;
+            Wearable.MessageApi.sendMessage(mGoogleApiClient, "test", Consts.PATH_WEATHER_REQUIRE, null)
+                    .setResultCallback(new ResultCallback<MessageApi.SendMessageResult>() {
+                        @Override
+                        public void onResult(MessageApi.SendMessageResult sendMessageResult) {
+                            log("SendRequireMessage:" + sendMessageResult.getStatus());
+                        }
+                    });
+        }
+
+        @Override
+        public void onConnected(Bundle bundle) {
+            log("Connected: " + bundle);
+            Wearable.DataApi.addListener(mGoogleApiClient, this);
+            requireWeatherInfo();
+        }
+
+        @Override
+        public void onConnectionSuspended(int i) {
+            log("ConnectionSuspended: " + i);
+        }
+
+        @Override
+        public void onDataChanged(DataEventBuffer dataEvents) {
+            for (int i = 0; i < dataEvents.getCount(); i++) {
+                DataEvent event = dataEvents.get(i);
+                DataMap dataMap = DataMap.fromByteArray(event.getDataItem().getData());
+                log("onDataChanged: " + dataMap);
+
+                fetchConfig(dataMap);
+            }
+        }
+
+        @Override
+        public void onConnectionFailed(ConnectionResult connectionResult) {
+            log("ConnectionFailed: " + connectionResult);
         }
     }
 }
