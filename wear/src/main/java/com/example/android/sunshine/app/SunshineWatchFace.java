@@ -23,11 +23,14 @@ import android.content.IntentFilter;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -43,13 +46,17 @@ import android.view.WindowInsets;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
 import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageApi;
 import com.google.android.gms.wearable.Wearable;
 
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -60,7 +67,7 @@ import java.util.concurrent.TimeUnit;
  * Analog watch face with a ticking second hand. In ambient mode, the second hand isn't shown. On
  * devices with low-bit ambient mode, the hands are drawn without anti-aliasing in ambient mode.
  */
-public class RoundWatchFace extends CanvasWatchFaceService {
+public class SunshineWatchFace extends CanvasWatchFaceService {
     private static final Typeface NORMAL_TYPEFACE =
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
     /**
@@ -80,7 +87,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
     private static final int MSG_UPDATE_TIME = 0;
     private boolean shouldShowSeconds = false;
 
-    public RoundWatchFace() {
+    public SunshineWatchFace() {
 
     }
 
@@ -90,15 +97,15 @@ public class RoundWatchFace extends CanvasWatchFaceService {
     }
 
     private static class EngineHandler extends Handler {
-        private final WeakReference<RoundWatchFace.Engine> mWeakReference;
+        private final WeakReference<SunshineWatchFace.Engine> mWeakReference;
 
-        public EngineHandler(RoundWatchFace.Engine reference) {
+        public EngineHandler(SunshineWatchFace.Engine reference) {
             mWeakReference = new WeakReference<>(reference);
         }
 
         @Override
         public void handleMessage(Message msg) {
-            RoundWatchFace.Engine engine = mWeakReference.get();
+            SunshineWatchFace.Engine engine = mWeakReference.get();
             if (engine != null) {
                 switch (msg.what) {
                     case MSG_UPDATE_TIME:
@@ -113,6 +120,8 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             GoogleApiClient.ConnectionCallbacks,
             GoogleApiClient.OnConnectionFailedListener,
             DataApi.DataListener{
+
+        private final  String TAG = SunshineWatchFace.class.getSimpleName();
 
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
@@ -129,14 +138,15 @@ public class RoundWatchFace extends CanvasWatchFaceService {
 
         protected int mTheme = 3;
         protected String mWeatherCondition;
-        protected String mWeatherConditionResourceName;
-      //  protected int mTimeUnit = ConverterUtil.TIME_UNIT_12;
+
 
         protected int mRequireInterval;
-        protected int mTemperature = Integer.MAX_VALUE;
-        protected int mTemperatureScale;
+        protected double mTemperatureHigh = 0.0d;
+        protected double mTemperatureLow = 0.0d;
         protected long mWeatherInfoReceivedTime;
         protected long mWeatherInfoRequiredTime;
+
+        private long TIMEOUT_MS = 100000;
 
         protected Bitmap mWeatherConditionDrawable;
         protected GoogleApiClient mGoogleApiClient;
@@ -166,7 +176,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
 
         public Engine() {
             mName = "roundwatch";
-            mGoogleApiClient = new GoogleApiClient.Builder(RoundWatchFace.this)
+            mGoogleApiClient = new GoogleApiClient.Builder(SunshineWatchFace.this)
                     .addConnectionCallbacks(this)
                     .addOnConnectionFailedListener(this)
                     .addApi(Wearable.API)
@@ -177,13 +187,13 @@ public class RoundWatchFace extends CanvasWatchFaceService {
         public void onCreate(SurfaceHolder holder) {
             super.onCreate(holder);
 
-            setWatchFaceStyle(new WatchFaceStyle.Builder(RoundWatchFace.this)
+            setWatchFaceStyle(new WatchFaceStyle.Builder(SunshineWatchFace.this)
                     .setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE)
                     .setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE)
                     .setShowSystemUiTime(false)
                     .setAcceptsTapEvents(true)
                     .build());
-            Resources resources = RoundWatchFace.this.getResources();
+            Resources resources = SunshineWatchFace.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
 
             mBackgroundPaint = new Paint();
@@ -203,14 +213,24 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             mLinePaint.setStrokeWidth(2f);
 
             mIconPaint = new Paint();
+
+
             mHighTempPaint = new Paint();
+            mHighTempPaint = createTextPaint(resources.getColor(R.color.digital_text));
             mLowTempPaint = new Paint();
+            mLowTempPaint = createTextPaint(resources.getColor(R.color.date_text));
 
             mTime = new Time();
-            mResources = RoundWatchFace.this.getResources();
-            mAssets = RoundWatchFace.this.getAssets();
+            mResources = SunshineWatchFace.this.getResources();
+            mAssets = SunshineWatchFace.this.getAssets();
             mRequireInterval = mResources.getInteger(R.integer.weather_default_require_interval);
             mWeatherInfoRequiredTime = System.currentTimeMillis() - (DateUtils.SECOND_IN_MILLIS * 58);
+
+            Drawable b = mResources.getDrawable(R.drawable.art_clear);
+            mWeatherConditionDrawable = ((BitmapDrawable) b).getBitmap();
+            mWeatherConditionDrawable = Bitmap.createScaledBitmap(
+                    mWeatherConditionDrawable, 70, 70, false);
+
             mGoogleApiClient.connect();
         }
 
@@ -253,7 +273,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             }
             mRegisteredTimeZoneReceiver = true;
             IntentFilter filter = new IntentFilter(Intent.ACTION_TIMEZONE_CHANGED);
-            RoundWatchFace.this.registerReceiver(mTimeZoneReceiver, filter);
+            SunshineWatchFace.this.registerReceiver(mTimeZoneReceiver, filter);
         }
 
         private void unregisterReceiver() {
@@ -261,7 +281,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
                 return;
             }
             mRegisteredTimeZoneReceiver = false;
-            RoundWatchFace.this.unregisterReceiver(mTimeZoneReceiver);
+            SunshineWatchFace.this.unregisterReceiver(mTimeZoneReceiver);
         }
 
         @Override
@@ -269,7 +289,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             super.onApplyWindowInsets(insets);
 
             // Load resources that have alternate values for round watches.
-            Resources resources = RoundWatchFace.this.getResources();
+            Resources resources = SunshineWatchFace.this.getResources();
             boolean isRound = insets.isRound();
             mXOffset = resources.getDimension(isRound
                     ? R.dimen.digital_x_offset_round : R.dimen.digital_x_offset);
@@ -280,19 +300,27 @@ public class RoundWatchFace extends CanvasWatchFaceService {
 
             float dateTextSize = 0.0f;
             float textSize = 0.0f;
+            float tempHighTextSize = 0.0f;
+            float tempLowTextSize = 0.0f;
 
             if (isRound) {
                 textSize = resources.getDimension(R.dimen.digital_text_size_round);
                 dateTextSize = resources.getDimension(R.dimen.digital_text_date_size_round);
+                tempHighTextSize = resources.getDimension(R.dimen.digital_text_size_round);
+                tempLowTextSize = resources.getDimension(R.dimen.digital_text_date_size_round);
 
             } else {
                 textSize = resources.getDimension(R.dimen.digital_text_size);
                 dateTextSize = resources.getDimension(R.dimen.digital_text_date_size);
+                tempHighTextSize = resources.getDimension(R.dimen.digital_text_size);
+                tempLowTextSize = resources.getDimension(R.dimen.digital_text_date_size);
 
             }
 
             mTimePaint.setTextSize(textSize);
             mDatePaint.setTextSize(dateTextSize);
+            mLowTempPaint.setTextSize(tempLowTextSize);
+            mHighTempPaint.setTextSize(tempHighTextSize);
         }
 
         @Override
@@ -329,7 +357,7 @@ public class RoundWatchFace extends CanvasWatchFaceService {
          */
         @Override
         public void onTapCommand(int tapType, int x, int y, long eventTime) {
-            Resources resources = RoundWatchFace.this.getResources();
+            Resources resources = SunshineWatchFace.this.getResources();
             switch (tapType) {
                 case TAP_TYPE_TOUCH:
                     // The user has started touching the screen.
@@ -373,6 +401,23 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             //draw middle line
             canvas.drawLine(bounds.exactCenterX() - 50.0f, bounds.exactCenterY(), bounds.exactCenterX() + 50.0f, bounds.exactCenterY(), mLinePaint);
             //     canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
+
+
+            String lowText = String.format(mResources.getString(R.string.format_temperature), mTemperatureLow);
+            String highText = String.format(mResources.getString(R.string.format_temperature), mTemperatureHigh);
+
+            float highXOffset = computeHighXOffset( bounds);
+            float highYOffset = computeWeatherYOffset(bounds);
+            canvas.drawText(highText, highXOffset, highYOffset, mHighTempPaint);
+
+            float lowXOffset = computeLowXOffset(highText, mHighTempPaint, bounds);
+            float lowYOffset = computeWeatherYOffset(bounds);
+            canvas.drawText(lowText, lowXOffset, lowYOffset, mLowTempPaint);
+
+            float iconXOffset = computeCondistionXOffset(bounds);
+            float iconYOffset = computeWeatherYOffset(bounds) - 50.0f;
+            canvas.drawBitmap(mWeatherConditionDrawable, iconXOffset, iconYOffset, mIconPaint);
+
         }
 
 
@@ -395,6 +440,30 @@ public class RoundWatchFace extends CanvasWatchFaceService {
             datePaint.getTextBounds(dateText, 0, dateText.length(), textBounds);
             return textBounds.height() + 15.0f;
         }
+
+        private float computeCondistionXOffset( Rect watchBounds){
+            float centerX = watchBounds.exactCenterX();
+            return  centerX - 100.0f;
+        }
+
+        private float computeHighXOffset( Rect watchBounds){
+            float centerX = watchBounds.exactCenterX();
+            return 15.0f + centerX;
+        }
+
+        private float computeLowXOffset(String highText, Paint mHighTempPaint, Rect watchBounds ){
+            float centerX = watchBounds.exactCenterX();
+            Rect textBounds = new Rect();
+            mHighTempPaint.getTextBounds(highText, 0, highText.length(), textBounds);
+            return centerX + 15.0f + textBounds.width() + 15.0f;
+        }
+
+        private float computeWeatherYOffset( Rect watchBounds){
+            float centerY = watchBounds.exactCenterY();
+            return  centerY + (centerY / 2);
+        }
+
+
 
         /**
          * Starts the {@link #mUpdateTimeHandler} timer if it should be running and isn't currently
@@ -429,10 +498,11 @@ public class RoundWatchFace extends CanvasWatchFaceService {
         }
 
         protected void log(String message) {
-            Log.d(RoundWatchFace.this.getClass().getSimpleName(), message);
+            Log.d(SunshineWatchFace.this.getClass().getSimpleName(), message);
         }
 
         protected void fetchConfig(DataMap config) {
+
             if (config.containsKey(Consts.KEY_WEATHER_UPDATE_TIME)) {
                 mWeatherInfoReceivedTime = config.getLong(Consts.KEY_WEATHER_UPDATE_TIME);
             }
@@ -446,45 +516,34 @@ public class RoundWatchFace extends CanvasWatchFaceService {
                 }
             }
             log(mWeatherCondition);
-//
-//            if (config.containsKey(Consts.KEY_WEATHER_TEMPERATURE)) {
-//                mTemperature = config.getInt(Consts.KEY_WEATHER_TEMPERATURE);
-//                if (mTemperatureScale != ConverterUtil.FAHRENHEIT) {
-//                    mTemperature = ConverterUtil.convertFahrenheitToCelsius(mTemperature);
-//                }
-//            }
-//
-//            if (config.containsKey(Consts.KEY_WEATHER_SUNRISE)) {
-//                mSunriseTime.set(config.getLong(Consts.KEY_WEATHER_SUNRISE) * 1000);
-//                log("SunriseTime: " + mSunriseTime);
-//            }
-//
-//            if (config.containsKey(Consts.KEY_WEATHER_SUNSET)) {
-//                mSunsetTime.set(config.getLong(Consts.KEY_WEATHER_SUNSET) * 1000);
-//                log("SunsetTime: " + mSunsetTime);
-//            }
-//
-//            if (config.containsKey(Consts.KEY_CONFIG_TEMPERATURE_SCALE)) {
-//                int scale = config.getInt(Consts.KEY_CONFIG_TEMPERATURE_SCALE);
-//
-//                if (scale != mTemperatureScale) {
-//                    if (scale == ConverterUtil.FAHRENHEIT) {
-//                        mTemperature = ConverterUtil.convertCelsiusToFahrenheit(mTemperature);
-//                    } else {
-//                        mTemperature = ConverterUtil.convertFahrenheitToCelsius(mTemperature);
-//                    }
-//                }
-//
-//                mTemperatureScale = scale;
-//            }
 
-            if (config.containsKey(Consts.KEY_CONFIG_THEME)) {
-                mTheme = config.getInt(Consts.KEY_CONFIG_THEME);
+            if (config.containsKey(Consts.KEY_WEATHER_HIGH)) {
+                mTemperatureHigh = config.getDouble(Consts.KEY_WEATHER_HIGH);
+
             }
 
-//            if (config.containsKey(Consts.KEY_CONFIG_TIME_UNIT)) {
-//                mTimeUnit = config.getInt(Consts.KEY_CONFIG_TIME_UNIT);
-//            }
+            if (config.containsKey(Consts.KEY_WEATHER_LOW)) {
+                mTemperatureLow = config.getDouble(Consts.KEY_WEATHER_LOW);
+
+            }
+
+            if(config.containsKey(Consts.KEY_WEATHER_CONDITION_IMAGE)){
+               final Asset iconAsset = config.getAsset(Consts.KEY_WEATHER_CONDITION_IMAGE);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mWeatherConditionDrawable = loadBitmapFromAsset(iconAsset);
+                        mWeatherConditionDrawable = Bitmap.createScaledBitmap(
+                                mWeatherConditionDrawable, 70, 70, false);
+                    }
+                }).start();
+
+
+
+            }
+
+//TODO: add settings activity in main app to control the communication time interval
 
             if (config.containsKey(Consts.KEY_CONFIG_REQUIRE_INTERVAL)) {
                 mRequireInterval = config.getInt(Consts.KEY_CONFIG_REQUIRE_INTERVAL);
@@ -524,6 +583,30 @@ public class RoundWatchFace extends CanvasWatchFaceService {
                     });
         }
 
+        public Bitmap loadBitmapFromAsset(Asset asset) {
+            if (asset == null) {
+                throw new IllegalArgumentException("Asset must be non-null");
+            }
+
+
+            ConnectionResult result =
+                    mGoogleApiClient.blockingConnect(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            if (!result.isSuccess()) {
+                return null;
+            }
+            // convert asset into a file descriptor and block until it's ready
+            InputStream assetInputStream = Wearable.DataApi.getFdForAsset(
+                    mGoogleApiClient, asset).await().getInputStream();
+            mGoogleApiClient.disconnect();
+
+            if (assetInputStream == null) {
+                Log.w(TAG, "Requested an unknown Asset.");
+                return null;
+            }
+            // decode the stream into a bitmap
+            return BitmapFactory.decodeStream(assetInputStream);
+        }
+
         @Override
         public void onConnected(Bundle bundle) {
             log("Connected: " + bundle);
@@ -538,13 +621,22 @@ public class RoundWatchFace extends CanvasWatchFaceService {
 
         @Override
         public void onDataChanged(DataEventBuffer dataEvents) {
-            for (int i = 0; i < dataEvents.getCount(); i++) {
-                DataEvent event = dataEvents.get(i);
-                DataMap dataMap = DataMap.fromByteArray(event.getDataItem().getData());
-                log("onDataChanged: " + dataMap);
 
-                fetchConfig(dataMap);
+            for (DataEvent event : dataEvents) {
+                if (event.getType() == DataEvent.TYPE_CHANGED) {
+                    // DataItem changed
+                    DataItem item = event.getDataItem();
+                    if (item.getUri().getPath().compareTo(Consts.PATH_WEATHER_INFO) == 0) {
+                        DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
+                        log("onDataChanged: " + dataMap);
+
+                        fetchConfig(dataMap);
+                    }
+                } else if (event.getType() == DataEvent.TYPE_DELETED) {
+                    // DataItem deleted
+                }
             }
+
         }
 
         @Override

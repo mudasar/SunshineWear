@@ -3,6 +3,8 @@ package com.example.android.sunshine.app.watch;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -15,6 +17,7 @@ import com.example.android.sunshine.app.data.WeatherContract;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.DataMap;
 import com.google.android.gms.wearable.MessageApi;
@@ -23,6 +26,8 @@ import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
 import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
+
+import java.io.ByteArrayOutputStream;
 
 /**
  * Created by mudasar on 02/05/16.
@@ -34,9 +39,9 @@ public class WeatherService extends WearableListenerService implements DataApi.D
     public static final  String KEY_WEATHER_CONDITION   = "Condition";
     public static final  String KEY_WEATHER_TEMPERATURE_HIGH     = "high";
     public static final  String KEY_WEATHER_TEMPERATURE_LOW      = "low";
-    public static final  String KEY_WEATHER_TEMP_FORMAT = "format";
+    public static final  String KEY_WEATHER_CONDITION_IMAGE      = "condition_image";
 
-    public static final  String KEY_WEATHER_TEMPERATURE = "Temperature";
+
     public static final  String PATH_WEATHER_INFO       = "/SunshineWeatherService/WeatherInfo";
     public static final  String PATH_SERVICE_REQUIRE    = "/SunshineWeatherService/Require";
     private static final String TAG                     = WeatherService.class.getSimpleName();
@@ -88,6 +93,12 @@ public class WeatherService extends WearableListenerService implements DataApi.D
 
     }
 
+    private static Asset createAssetFromBitmap(Bitmap bitmap) {
+        final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
+        return Asset.createFromBytes(byteStream.toByteArray());
+    }
+
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         Log.d(TAG, "onConnected: " + bundle);
@@ -112,6 +123,7 @@ public class WeatherService extends WearableListenerService implements DataApi.D
         @Override
         protected Object doInBackground( Object[] params )
         {
+            Cursor cursor = null;
             try
             {
                 Log.d( TAG, "Task Running" );
@@ -129,7 +141,7 @@ public class WeatherService extends WearableListenerService implements DataApi.D
                 Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationQuery, System.currentTimeMillis());
 
                 // we'll query our contentProvider, as always
-                Cursor cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
+                 cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
 
                 if (cursor.moveToFirst()) {
                     int weatherId = cursor.getInt(INDEX_WEATHER_ID);
@@ -137,8 +149,13 @@ public class WeatherService extends WearableListenerService implements DataApi.D
                     double low = cursor.getDouble(INDEX_MIN_TEMP);
                     String desc = cursor.getString(INDEX_SHORT_DESC);
 
-                    DataMap dataMap = new DataMap();
+                    int iconRes = Utility.getIconResourceForWeatherCondition(weatherId);
 
+                    Bitmap bitmap = BitmapFactory.decodeResource(getResources(), iconRes);
+                    Asset asset = createAssetFromBitmap(bitmap);
+
+                    DataMap dataMap = new DataMap();
+                    dataMap.putAsset(KEY_WEATHER_CONDITION_IMAGE, asset);
 
                     //real
                     dataMap.putDouble(KEY_WEATHER_TEMPERATURE_HIGH, high);
@@ -146,17 +163,24 @@ public class WeatherService extends WearableListenerService implements DataApi.D
                     dataMap.putDouble(KEY_WEATHER_TEMPERATURE_LOW, low );
                     dataMap.putString(KEY_WEATHER_CONDITION, desc);
 
+
+                    dataMap.putLong("timestamp", System.currentTimeMillis());
+
                     PutDataMapRequest putDMR = PutDataMapRequest.create(PATH_WEATHER_INFO);
                     putDMR.getDataMap().putAll(dataMap);
                     PutDataRequest request = putDMR.asPutDataRequest();
+
                     DataApi.DataItemResult result = Wearable.DataApi.putDataItem(mGoogleApiClient, request).await();
                     if (result.getStatus().isSuccess()) {
-                        Log.v("myTag", "DataMap: " + dataMap + " sent successfully to data layer ");
+                        Log.v(TAG, "DataMap: " + dataMap + " sent successfully to data layer ");
                     }
                     else {
                         // Log an error
-                        Log.v("myTag", "ERROR: failed to send DataMap to data layer");
+                        Log.v(TAG, "ERROR: failed to send DataMap to data layer");
                     }
+
+//not being used
+                    //TODO: implement data transfer through messages
 
                     Wearable.MessageApi.sendMessage( mGoogleApiClient, mPeerId, PATH_WEATHER_INFO, dataMap.toByteArray() )
                             .setResultCallback(
@@ -173,6 +197,11 @@ public class WeatherService extends WearableListenerService implements DataApi.D
             catch ( Exception e )
             {
                 Log.d( TAG, "Task Fail: " + e );
+            }
+            finally {
+                if (cursor != null){
+                    cursor.close();
+                }
             }
             return null;
         }

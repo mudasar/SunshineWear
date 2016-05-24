@@ -1,5 +1,6 @@
-<resources>
-    <string name="app_name">SunshineWear</string>
+<resources  xmlns:xliff="http://schemas.android.com/apk/res-auto">
+    <string name="app_name">Sunshine Wear</string>
     <string name="my_analog_name">Sunshine Round Wear</string>
     <string name="my_digital_name">Sunshine Square Wear</string>
+    <string name="format_temperature"><xliff:g id="temp">%1.0f</xliff:g>\u00B0</string>
 </resources>

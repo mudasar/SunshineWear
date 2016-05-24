@@ -2,7 +2,7 @@
 <resources>
     <dimen name="analog_hand_stroke">3dp</dimen>
     <dimen name="digital_text_size">25dp</dimen>
-    <dimen name="digital_text_date_size">20dp</dimen>
+    <dimen name="digital_text_date_size">15dp</dimen>
     <dimen name="digital_text_size_round">25dp</dimen>
     <dimen name="digital_text_date_size_round">15dp</dimen>
     <dimen name="digital_x_offset">15dp</dimen>
