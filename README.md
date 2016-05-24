@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 Advanced Android Sample App
 ===================================
 
@@ -50,3 +51,8 @@ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
 License for the specific language governing permissions and limitations under
 the License.
 
+||||||| merged common ancestors
+=======
+# SunshineWear
+Sunshine wear assignment
+>>>>>>> 7adc1666ae1ea0b99008a567483a3c6b66168462
