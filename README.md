@@ -1,8 +1,8 @@
-<<<<<<< HEAD
-Advanced Android Sample App
-===================================
+Sunshine App
 
 Synchronizes weather information from OpenWeatherMap on Android Phones and Tablets. Used in the Udacity Advanced Android course.
+
+*Update: Added Android wear capabilities.
 
 Pre-requisites
 --------------
@@ -51,8 +51,3 @@ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
 License for the specific language governing permissions and limitations under
 the License.
 
-||||||| merged common ancestors
-=======
-# SunshineWear
-Sunshine wear assignment
->>>>>>> 7adc1666ae1ea0b99008a567483a3c6b66168462
